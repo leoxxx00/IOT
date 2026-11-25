@@ -1,0 +1,2 @@
+site_id,timestamp,pv_power_w,load_power_w,grid_power_w,battery_power_w,battery_soc_pct
+test-01,2026-11-24T18:45:18Z,0.0,1357.5,0.0,-1357.5,49.5

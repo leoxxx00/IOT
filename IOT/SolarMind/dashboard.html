@@ -1,0 +1,34 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>SolarMind · Site monitor</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f3f5f0;color:#182f27;font:16px system-ui,sans-serif}header{background:#143e32;color:white;padding:18px max(5vw,20px);font-weight:700;letter-spacing:.02em}main{max-width:1260px;margin:auto;padding:30px 4%}h1{font-size:clamp(30px,4vw,54px);letter-spacing:-.05em;margin:0}h2{font-size:19px;margin:0 0 14px}#status{color:#425b50}.grid,.pair{display:grid;gap:12px}.grid{grid-template-columns:repeat(auto-fit,minmax(155px,1fr))}.pair{grid-template-columns:repeat(auto-fit,minmax(265px,1fr))}article,section,details{background:white;border:1px solid #d8dfd6;border-radius:12px;padding:18px}section,details{margin-top:18px}article:first-child{background:#e5f2ae}strong{display:block;font-size:30px;margin:10px 0 3px}small,dt{color:#486055}dl{margin:0}dt,dd{display:inline-block;vertical-align:top;margin:4px 0;width:48%;overflow-wrap:anywhere}.scroll{overflow:auto;max-height:360px}table{border-collapse:collapse;width:100%;text-align:right;font-variant-numeric:tabular-nums}td,th{padding:9px;white-space:nowrap;border-bottom:1px solid #e2e8de}th{background:white;position:sticky;top:0}th:first-child,td:first-child{text-align:left}summary{cursor:pointer;font-weight:650}
+</style><header>SolarMind &nbsp; / &nbsp; Edge gateway</header><main><h1>Site monitor</h1><p id="status" role="status">Loading readings…</p><div class="grid" id="metrics"></div><div class="pair"><section><h2>Weather</h2><dl id="weather"></dl></section><section><h2>Delivery queue</h2><dl id="queue"></dl></section></div><section><h2>Recent minute averages</h2><div class="scroll"><table><thead><tr id="head"></tr></thead><tbody id="rows"></tbody></table></div></section><section><h2>Arduino bench circuit · simulated</h2><dl id="arduino"></dl></section><details><summary>Gateway configuration</summary><dl id="config"></dl></details></main>
+<script>
+const el=id=>document.getElementById(id);
+const fields=[['pv_power_w','Solar','W'],['load_power_w','House load','W'],['grid_power_w','Grid','W'],['battery_power_w','Battery','W'],['battery_soc_pct','Battery charge','%']];
+function node(tag,text){const n=document.createElement(tag);n.textContent=text;return n}
+function pairs(id,obj){el(id).replaceChildren(...Object.entries(obj).flatMap(([k,v])=>[node('dt',k),node('dd',v??'—')]))}
+const fmt=v=>v==null?'—':v.toLocaleString(undefined,{maximumFractionDigits:2});
+const utc=t=>new Date(t).toISOString().replace('T',' ').slice(0,19);
+el('head').append(...['Time (UTC)',...fields.map(f=>f[1]+' ('+f[2]+')')].map(s=>node('th',s)));
+async function refresh(){
+ try{
+ const response=await fetch('/dashboard/data',{cache:'no-store'});if(!response.ok)throw Error();
+ const {readings,weather:w,queue,config}=await response.json();const r=readings[0];
+ el('status').textContent=config.site_id+' · '+(r?(Date.now()-Date.parse(r.timestamp)>125000?'Delayed reading · ':'Latest reading · ')+utc(r.timestamp)+' UTC':'Waiting for the first minute average');
+ el('metrics').replaceChildren(...fields.map(([k,label,unit])=>{const v=r?.[k];const card=node('article','');const direction=v==null?'':k==='grid_power_w'?(v>0?'Importing':v<0?'Exporting':'Balanced'):k==='battery_power_w'?(v>0?'Charging':v<0?'Discharging':'Idle'):'';card.append(node('span',label),node('strong',fmt(v)+' '+unit),node('small',direction));return card}));
+ pairs('weather',{'Simulation input':w.source,'Last temperature (°C)':w.temperature_c,'Last irradiance (W/m²)':w.irradiance_w_m2,'Weather time (UTC)':w.observed_epoch?utc(w.observed_epoch*1000):null,'Fetched (UTC)':w.fetched_utc?utc(w.fetched_utc):null});
+ pairs('queue',queue??{'Queue status':'Waiting for gateway'});pairs('config',{...config,'MQTT topic':'solarmind/'+config.site_id+'/reading','Poll interval':'10 seconds','Average interval':'60 seconds'});
+ el('rows').replaceChildren(...readings.map(r=>{const tr=node('tr','');tr.append(...[utc(r.timestamp),...fields.map(f=>fmt(r[f[0]]))].map(v=>node('td',v)));return tr}));
+ }catch{el('status').textContent='Refresh failed · retrying in 5 seconds'}finally{setTimeout(refresh,5000)}
+}refresh();
+async function refreshCircuit(){
+ try{
+ const r=await fetch('/arduino',{cache:'no-store'});
+ if(!r.ok)throw Error();
+ const values=await r.json();
+ if(values['Sample UTC'] && Date.now()-Date.parse(values['Sample UTC'])>5000)values.Status='Stale sample';
+ pairs('arduino',values);
+ }catch{pairs('arduino',{Status:'Connection unavailable'})}
+ finally{setTimeout(refreshCircuit,1000)}
+}refreshCircuit();
+</script></html>

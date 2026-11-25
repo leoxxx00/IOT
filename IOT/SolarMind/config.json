@@ -1,0 +1,7 @@
+{
+  "site_id": "test-01", "inverter_ip": "127.0.0.1", "inverter_port": 1502,
+  "mqtt_host": "127.0.0.1", "mqtt_port": 1883,
+  "http_url": "http://127.0.0.1:8010/readings",
+  "latitude": 51.47, "longitude": -0.36, "timezone": "Europe/London",
+  "state_dir": "./data"
+}

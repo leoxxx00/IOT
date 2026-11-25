@@ -1,0 +1,177 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>SolarMind · Site monitor</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f3f5f0;color:#182f27;font:16px system-ui,sans-serif}header{background:#143e32;color:white;padding:18px max(5vw,20px);font-weight:700;letter-spacing:.02em}main{max-width:1260px;margin:auto;padding:30px 4%}h1{font-size:clamp(30px,4vw,54px);letter-spacing:-.05em;margin:0}h2{font-size:19px;margin:0 0 14px}#status{color:#425b50}.grid,.pair{display:grid;gap:12px}.grid{grid-template-columns:repeat(auto-fit,minmax(155px,1fr))}.pair{grid-template-columns:repeat(auto-fit,minmax(265px,1fr))}article,section,details{background:white;border:1px solid #d8dfd6;border-radius:12px;padding:18px}section,details{margin-top:18px}article:first-child{background:#e5f2ae}strong{display:block;font-size:30px;margin:10px 0 3px}small,dt{color:#486055}dl{margin:0}dt,dd{display:inline-block;vertical-align:top;margin:4px 0;width:48%;overflow-wrap:anywhere}.scroll{overflow:auto;max-height:360px}table{border-collapse:collapse;width:100%;text-align:right;font-variant-numeric:tabular-nums}td,th{padding:9px;white-space:nowrap;border-bottom:1px solid #e2e8de}th{background:white;position:sticky;top:0}th:first-child,td:first-child{text-align:left}summary{cursor:pointer;font-weight:650}
+
+#tester{max-width:950px}#tester form{display:flex;flex-wrap:wrap;align-items:end;gap:14px}
+#tester label{display:grid;gap:6px;font-weight:600}#tester :is(select,input,button){font:inherit;padding:9px 12px;border:1px solid #889d92;border-radius:6px}
+#tester button{background:#143e32;color:white;cursor:pointer}#tester pre{background:#102c25;color:#e6f4d9;padding:16px;overflow:auto;max-height:55vh;border-radius:8px}
+#tester [hidden]{display:none}
+#tester{max-width:1080px}#tester a{color:#176048;text-underline-offset:3px}
+#tester .tester-title{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:12px}
+#tester .tester-title nav{display:flex;gap:18px}
+#tester section{border-radius:16px;padding:clamp(16px,3vw,28px)}
+.conditions{color:#f5fff3;background:linear-gradient(115deg,#103d36,#226759);border:0}
+.conditions h2{color:#c8e8d7}.conditions .weather-numbers{display:flex;flex-direction:column;align-items:flex-start;gap:5px}
+.conditions .temperature{font:600 clamp(40px,7vw,70px)/1.1 system-ui;letter-spacing:-.06em}
+.conditions p{margin:12px 0 0;color:#dbefe5}
+#tester input,#tester select{background:#f7faf7;max-width:100%}
+#tester #test-site{width:145px}#tester #test-limit{width:90px}
+#tester button:hover{background:#205846}#tester pre{font-size:14px;line-height:1.55;min-height:80px}
+#tester #request-url{overflow-wrap:anywhere}
+</style><header>SolarMind &nbsp; / &nbsp; Edge gateway</header><main><h1>Site monitor</h1><p id="status" role="status">Loading readings…</p><div class="grid" id="metrics"></div><div class="pair"><section class="conditions" aria-labelledby="conditions-title"><h2 id="conditions-title">Station weather</h2>
+<div class="weather-numbers"><span id="station-temperature" class="temperature">—</span><span id="station-cover"></span></div>
+<p id="station-meta" role="status">Loading station observation…</p></section><section><h2>Delivery queue</h2><dl id="queue"></dl></section></div><section><h2>Latest 100 minute averages</h2><p>Download full site history · <a id="export-json">JSON</a> · <a id="export-csv">CSV</a></p><div class="scroll"><table><thead><tr id="head"></tr></thead><tbody id="rows"></tbody></table></div></section><section><h2>Arduino bench circuit · simulated</h2><dl id="arduino"></dl></section><section><h2>Reading API</h2><nav><a id="latest">Latest JSON</a> · <a id="history">Minute history</a> · <a href="/docs">API documentation</a> · <a href="/?api-test">API tester</a></nav></section><details><summary>Gateway configuration</summary><dl id="config"></dl></details></main>
+<main id="tester" hidden>
+<div class="tester-title"><h1>API tester</h1><nav><a href="/">Site monitor</a><a href="/docs">API documentation</a></nav></div>
+<section aria-labelledby="live-title"><h2 id="live-title">Live gateway reading</h2>
+<p id="live-status" role="status">Waiting for telemetry…</p><div class="grid" id="live-cards"></div><details><summary>Reading JSON</summary><pre id="live-reading">—</pre></details></section>
+<div id="tester-weather"></div>
+<section><form id="request-form">
+<label>Endpoint<select id="endpoint">
+<option value="latest">Latest reading</option><option value="readings">Reading history</option>
+<option value="export.json">JSON export</option><option value="export.csv">CSV export</option>
+<option value="/weather">Weather</option><option value="/dashboard/data">Dashboard data</option>
+<option value="/arduino">Arduino circuit</option></select></label>
+<label id="site-label">Site ID<input id="test-site" value="test-01" required></label>
+<label id="limit-label" hidden>Reading limit<input id="test-limit" type="number" value="100" min="1" max="1000" required></label>
+<label id="since-label" hidden>Readings after (optional)<input id="since" placeholder="2026-11-25T09:30:00Z"></label>
+<button type="submit" id="send">Send request</button></form><p><a id="download-test-csv" download>Download CSV history</a></p><p><code id="request-url"></code></p></section>
+<section><h2>Response</h2><p id="test-status" role="status">Ready</p><pre id="result">—</pre></section></main>
+<script>
+const el=id=>document.getElementById(id);
+const fields=[['pv_power_w','Solar','W'],['load_power_w','House load','W'],['grid_power_w','Grid','W'],['battery_power_w','Battery','W'],['battery_soc_pct','Battery charge','%']];
+function node(tag,text){const n=document.createElement(tag);n.textContent=text;return n}
+function pairs(id,obj){el(id).replaceChildren(...Object.entries(obj).flatMap(([k,v])=>[node('dt',k),node('dd',v??'—')]))}
+const fmt=v=>v==null?'—':v.toLocaleString(undefined,{maximumFractionDigits:2});
+const utc=t=>new Date(t).toISOString().replace('T',' ').slice(0,19);
+el('head').append(...['Time (UTC)',...fields.map(f=>f[1]+' ('+f[2]+')')].map(s=>node('th',s)));
+function renderStation(w){
+ const temperature=el('station-temperature'), cover=el('station-cover'), meta=el('station-meta');
+     temperature.textContent=Number.isFinite(w.temperature_c)?fmt(w.temperature_c)+' °C':'—';
+     cover.textContent=Number.isFinite(w.cloud_fraction)?Math.round(w.cloud_fraction*100)+'% estimated cloud cover':'Cloud cover unavailable';
+     const station=w.station==='EGLL'?'London Heathrow (EGLL)':w.station;
+     const status=w.weather_available?'Current observation':w.observed_epoch?'Last observation · stale':'No current station observation';
+     meta.textContent=[status,station,w.observed_epoch?utc(w.observed_epoch*1000)+' UTC':null,w.provider].filter(Boolean).join(' · ');
+}
+ async function refreshStation(){
+   const temperature=el('station-temperature'), cover=el('station-cover'), meta=el('station-meta');
+   try{
+     const response=await fetch('/weather',{cache:'no-store'});
+     if(!response.ok)throw Error();
+     const w=await response.json();
+     renderStation(w);
+   }catch{
+     temperature.textContent='—';
+     cover.textContent='';
+     meta.textContent='Weather endpoint unavailable. Retrying in 60 seconds.';
+   }finally{setTimeout(refreshStation,60000)}
+ }
+async function refresh(){
+ try{
+ const response=await fetch('/dashboard/data',{cache:'no-store'});if(!response.ok)throw Error();
+ const {readings,weather:w,queue,config}=await response.json();const r=readings[0];
+ const site='/sites/'+encodeURIComponent(config.site_id);
+ el('export-json').href=site+'/export.json'; el('export-csv').href=site+'/export.csv';
+ el('latest').href=site+'/latest'; el('history').href=site+'/readings';
+ el('status').textContent=config.site_id+' · '+(r?(Date.now()-Date.parse(r.timestamp)>125000?'Delayed reading · ':'Latest reading · ')+utc(r.timestamp)+' UTC':'Waiting for the first minute average');
+ el('metrics').replaceChildren(...fields.map(([k,label,unit])=>{const v=r?.[k];const card=node('article','');const direction=v==null?'':k==='grid_power_w'?(v>0?'Importing':v<0?'Exporting':'Balanced'):k==='battery_power_w'?(v>0?'Charging':v<0?'Discharging':'Idle'):'';card.append(node('span',label),node('strong',fmt(v)+' '+unit),node('small',direction));return card}));
+ renderStation(w);
+ pairs('queue',queue??{'Queue status':'Waiting for gateway'});pairs('config',{...config,'MQTT topic':'solarmind/'+config.site_id+'/reading','Poll interval':'10 seconds','Average interval':'60 seconds'});
+ el('rows').replaceChildren(...readings.map(r=>{const tr=node('tr','');tr.append(...[utc(r.timestamp),...fields.map(f=>fmt(r[f[0]]))].map(v=>node('td',v)));return tr}));
+ }catch{el('status').textContent='Refresh failed · retrying in 5 seconds';el('station-meta').textContent='Weather refresh failed · retrying';el('station-temperature').textContent='—';el('station-cover').textContent=''}finally{setTimeout(refresh,5000)}
+}
+async function refreshCircuit(){
+ try{
+ const r=await fetch('/arduino',{cache:'no-store'});
+ if(!r.ok)throw Error();
+ const values=await r.json();
+ if(values['Sample UTC'] && Date.now()-Date.parse(values['Sample UTC'])>5000)values.Status='Stale sample';
+ pairs('arduino',values);
+ }catch{pairs('arduino',{Status:'Connection unavailable'})}
+ finally{setTimeout(refreshCircuit,1000)}
+}
+if (new URLSearchParams(location.search).has('api-test')) {
+ document.querySelector('main').hidden=true;
+ el('tester').hidden=false;
+ document.title='API tester · SolarMind';
+ el('tester-weather').replaceWith(document.querySelector('.conditions'));
+ refreshStation();
+ const form=el('request-form'), endpoint=el('endpoint'), site=el('test-site'), limit=el('test-limit');
+ let liveTimer, liveVersion=0;
+ async function refreshReading(){
+   const version=++liveVersion;
+   clearTimeout(liveTimer);
+   const id=site.value.trim();
+   if(!id){el('live-cards').replaceChildren();el('live-status').textContent='Enter a site ID';el('live-reading').textContent='—';return}
+   try{
+     const base='/sites/'+encodeURIComponent(id);
+     let response=await fetch(base+'/live',{cache:'no-store'});
+     const saved=response.status===404;
+     if(saved)response=await fetch(base+'/latest',{cache:'no-store'});
+     if(!response.ok)throw Error(response.status===404?'No readings yet':'HTTP '+response.status);
+     const row=await response.json();
+     if(version!==liveVersion)return;
+     const reading={site_id:row.site_id,timestamp:row.timestamp};
+     for(const [key] of fields)reading[key]=row[key];
+     el('live-reading').textContent=JSON.stringify(reading,null,2);
+     el('live-cards').replaceChildren(...fields.map(([key,label,unit])=>{
+       const card=node('article','');
+       card.append(node('span',label),node('strong',fmt(row[key])+' '+unit));
+       return card;
+     }));
+     const delayed=Date.now()-Date.parse(row.timestamp)>125000;
+     el('live-status').textContent=id+' · '+(saved?(delayed?'Delayed minute average':'Latest minute average'):'Live inverter sample')+' · '+utc(row.timestamp)+' UTC · Refreshes every 10 s';
+   }catch(error){
+     if(version!==liveVersion)return;
+     el('live-reading').textContent='—';
+     el('live-cards').replaceChildren();
+     el('live-status').textContent=id+' · '+error.message;
+   }finally{
+     if(version===liveVersion)liveTimer=setTimeout(refreshReading,10000);
+   }
+ }
+ site.addEventListener('input',refreshReading);
+ refreshReading();
+ function exportQuery(){
+   const since=el('since').value.trim();
+   return since?'?since='+encodeURIComponent(since):'';
+ }
+ function requestPath(){
+   if(endpoint.value.startsWith('/')) return endpoint.value;
+   const query=endpoint.value==='readings'?'?limit='+encodeURIComponent(limit.value):endpoint.value.startsWith('export.')?exportQuery():'';
+   return '/sites/'+encodeURIComponent(site.value.trim())+'/'+endpoint.value+query;
+ }
+ function updateRequest(){
+   site.disabled=endpoint.value.startsWith('/');
+   limit.disabled=endpoint.value!=='readings';
+   el('site-label').hidden=site.disabled;
+   el('limit-label').hidden=limit.disabled;
+   const exporting=endpoint.value.startsWith('export.');
+   el('since-label').hidden=!exporting;
+   el('download-test-csv').textContent=exporting && el('since').value.trim()?'Download CSV after timestamp':'Download full CSV history';
+   el('download-test-csv').href='/sites/'+encodeURIComponent(site.value.trim())+'/export.csv'+(exporting?exportQuery():'');
+   el('download-test-csv').hidden=site.disabled || !site.value.trim();
+   el('request-url').textContent='GET '+requestPath();
+ }
+ form.addEventListener('input',updateRequest);
+ form.addEventListener('submit',async event=>{
+   event.preventDefault();
+   const path=requestPath();
+   el('send').disabled=true;
+   el('test-status').textContent='Sending…';
+   el('result').textContent='';
+   try{
+     const response=await fetch(path,{cache:'no-store'});
+     const raw=await response.text();
+     const jsonType=response.headers.get('content-type')?.includes('application/json');
+     el('result').textContent=jsonType?JSON.stringify(JSON.parse(raw),null,2):raw;
+     el('test-status').textContent='HTTP '+response.status+' · GET '+path;
+   }catch(error){el('test-status').textContent='Request failed · '+error.message}
+   finally{el('send').disabled=false}
+ });
+ updateRequest();
+} else {
+ refresh();
+ refreshCircuit();
+}
+</script></html>

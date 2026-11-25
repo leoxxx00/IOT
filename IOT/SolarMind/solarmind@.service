@@ -1,0 +1,16 @@
+[Unit]
+Description=SolarMind demo %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=/opt/solarmind
+Environment=SOLARMIND_CONFIG=/etc/solarmind/config.json
+ExecStart=/opt/solarmind/.venv/bin/python /opt/solarmind/%i.py
+User=solarmind
+StateDirectory=solarmind
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
